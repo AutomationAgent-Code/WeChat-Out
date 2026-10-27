@@ -1,0 +1,7 @@
+interface:
+  display_name: "微信聊天记录与风格"
+  short_description: "从 Windows 微信按标签导出聊天并生成个人回复风格画像"
+  default_prompt: "Use $wechat-chat-style to export a WeChat label and regenerate my reply style profile."
+
+policy:
+  allow_implicit_invocation: true

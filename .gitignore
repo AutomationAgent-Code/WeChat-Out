@@ -1,0 +1,30 @@
+# Private chat data and database material
+exports/
+style/
+decrypted*/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.csv
+*.html
+*.json
+*.dpapi
+*.key
+*.pem
+
+# Local tools and environments
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.log
+WxExport*/
+WeChatMsg*/
+
+# Editors and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
