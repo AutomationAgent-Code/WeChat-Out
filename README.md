@@ -1,89 +1,86 @@
 # WeChat-Out
 
-面向 Codex 的 Windows 微信本地聊天读取 Skill，附带可执行 Python 脚本。核心是读出本人聊天记录，不是分类或风格生成。
+面向 Codex 的 Windows 微信聊天读取 Skill，内置免第三方 DLL 的自动密钥获取、DPAPI 凭据保存和聊天导出。
 
 ```text
-选定本人账户 → 检查数据库 → 制作副本 → 本地密钥接入
-→ 逐页认证解密 → SQLite 完整性检查 → 多分片读取 → JSONL
+安装依赖 → 发现本人账户和进程 → 只读扫描密钥并做 HMAC 验证
+→ DPAPI 保存 → 用户正常退出微信 → 批量快照/解密 → JSONL
 ```
 
-## 安装
+## 安装与使用
+
+需要 Windows 10/11 AMD64、64 位 Python 3.11+、本人已登录的微信。无需安装 WinDbg、寻找 DLL 或输入数据库密钥。
 
 ```powershell
 git clone https://github.com/AutomationAgent-Code/WeChat-Out.git "$env:USERPROFILE\.codex\skills\wechat-chat-reader"
 cd "$env:USERPROFILE\.codex\skills\wechat-chat-reader"
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+python scripts/setup_skill.py
 ```
 
-需要 Python 3.11+。下面简写的 `python` 应使用该虚拟环境解释器。重新启动会话后调用 `$wechat-chat-reader`。数据库读取、离线解密和测试可跨平台运行；DPAPI 与可选进程适配器仅用于 Windows。
+依赖安装到 Skill 自己的 `.venv`，不改全局 Python 配置。Codex 首次调用本 Skill 时也会按指令自动准备依赖。安装依赖需要网络；取密钥和导出流程不联网。
 
-## 使用
-
-在 Codex 中：
+在新会话中说：
 
 ```text
-用 $wechat-chat-reader 读取我本人的 Windows 微信聊天。先检查指定账户目录和现有工具，再制作副本并导出；缺密钥时说明本地接入步骤，不要让我把密钥发到聊天里。
+用 $wechat-chat-reader 读取我自己的微信聊天。我同意只读扫描本人的微信进程来取得所需数据库密钥，不使用外部 DLL。
 ```
 
-已有解密副本时，可直接运行：
+Skill 会完成依赖检查、账户发现和内置扫描。多账户或多主进程时仍需选定目标。成功取密钥后，用户正常退出微信，再继续导出，避免漏掉活动 WAL。**目前不是“客户端保持运行也能全量一致导出”的一键工具。**
+
+## 不通过 Codex 的命令行用法
+
+在仓库目录执行：
 
 ```powershell
-python scripts/read_chats.py --contact-db '<contact.db>' --message-dir '<message分片目录>' --output 'exports/chats.jsonl'
+.\.venv\Scripts\python.exe scripts/wechat.py discover
+.\.venv\Scripts\python.exe scripts/wechat.py capture --account '<本人db_storage或账户目录>' --output 'private/keyring.dpapi' --accept-own-account-memory-read
+# 取密钥成功后，自己正常退出微信；不要直接结束进程或删 WAL
+.\.venv\Scripts\python.exe scripts/wechat.py export --account '<同一账户目录>' --keyring 'private/keyring.dpapi' --output-dir 'exports/run-001' --source-closed
 ```
 
-加密数据库：
+单账户、单主进程时可省略 `--account` 和 `--pid`；发现多个候选会要求选择，不按目录顺序或最大内存猜测。输出目录必须是新目录，最终聊天文件为 `exports/run-001/chats.jsonl`。
 
-```powershell
-python scripts/inspect_databases.py --root '<本人账户目录>'
-# 正常退出微信后，对联系人库及每个消息分片分别制作副本
-python scripts/snapshot_database.py --source '<加密源数据库>' --output 'working-copy/message_0.db' --source-closed
-python scripts/decrypt_sqlcipher.py --source 'working-copy/message_0.db' --output 'decrypted/message/message_0.db' --prompt-key
-```
+详细用法、错误码与高级入口见 [Windows 操作指南](references/windows-export.md)。
 
-`--prompt-key` 只在本地终端隐藏输入本人密钥，不要求用户在聊天中提供。已有 DPAPI blob 可用 `--protected-key`。
+## 内置能力
 
-没有密钥时，提供了可选 `capture_key.py` 适配器：用户必须自备可信、合法且 ABI 匹配的 DLL，核对 SHA256/PID，并明确同意对本人微信进程安装 Hook。**仓库不捆绑第三方 DLL，也不是无需外部依赖、支持所有版本的一键密钥提取器。** 完整步骤、ABI、错误恢复及参数见 [Windows 操作指南](references/windows-export.md)。
-
-## 已实现
-
-| 脚本 | 功能 |
+| 组件 | 能力 |
 | --- | --- |
-| inspect_databases.py | 显式目录内的明文/非明文检查、表字段与 WAL 清单 |
-| snapshot_database.py | 明文 SQLite backup，或已关闭加密源的稳定副本 |
-| decrypt_sqlcipher.py | SQLCipher 4 页面布局、逐页 HMAC、完整性校验、不覆盖输出 |
-| capture_key.py | 可选外部 DLL ABI 接入，验证捕获凭据后保存为当前用户 DPAPI |
-| read_chats.py | 实际字段检查、多分片读取、发送者关联、zstd、去重和 JSONL |
+| setup_skill.py | 创建专用虚拟环境并安装依赖 |
+| wechat.py discover | 当前用户的账户候选与本人微信主 PID |
+| wechat.py capture | 内置 Config.Cipher/旧式 literal 只读扫描，逐库 HMAC 认证，DPAPI 密钥环 |
+| wechat.py export | 同一账户全部聊天库快照、原始密钥解密、完整性检查和 JSONL |
+| inspect_databases.py / snapshot_database.py | 结构检查和单库安全副本 |
+| decrypt_sqlcipher.py / read_chats.py | 单库解密和多分片消息读取 |
+| capture_key.py | 旧的外部 DLL 高级接入；默认流程不使用 |
+
+每个数据库可以使用不同密钥，不再假定一个全局密钥适用于所有库。只有所选账户的 HMAC 认证结果会保存；部分捕获不生成看似成功的密钥环。
+
+## 安全边界
+
+- 只处理本人或明确授权的数据，且默认扫描器仅打开当前 Windows 用户的微信主进程。
+- 通过 Windows `VirtualQueryEx` 和 `ReadProcessMemory` 查询/读取，不注入 DLL、不写目标进程、不设置断点、不转储完整内存。
+- 不自动提权、不关闭防护、不自动登录/退出微信。安装 Skill 不等于授权读取内存。
+- 默认 60 秒、累计 4096 MiB 读取预算，可显式调整；找不到密钥会报告失败，不保证所有版本。
+- 密钥只保存为当前 Windows 用户 DPAPI 加密文件，不在命令行、聊天、日志中回显。密钥环绑定所选账户目录，不能跨账户复用。
+- 原始数据库只读，已有输出不覆盖。存在未合并 WAL/journal 时拒绝页面式导出，不通过丢弃日志来继续。
+- 工具没有遥测/上传代码；导出文件、数据库副本和诊断路径仍属隐私。将正文交给云端模型分析不属于纯本地处理。
+- Python 内存擦除尽力而为，不承诺清除解释器的所有副本。失败输出目录可能保留已经验证的数据库副本，不会擅自删除。
 
 ## 兼容性与验证
 
-- 读取器支持指南列出的微信 4.x 形态字段契约，不凭客户端版本号推定兼容。
-- 解密器实现一种 SQLCipher 4 SHA512/CBC 页面布局；不是所有 SQLCipher 版本/参数均支持。
-- 测试使用合成 SQLite、合成加密页面和模拟消息；没有打包真实聊天或凭据。
-- **微信 4.1.15.13 的真实 Hook、解密与全量导出尚未现场验证**。缺少 DLL/密钥不等于该版本一定不支持。
-- 未导出图片/视频等附件文件、未转写语音；复杂消息保留原文或二进制 base64。
+内置扫描器针对 Windows AMD64 WCDB `Config.Cipher` 运行时布局和旧式 SQLCipher key literal；解密器针对 SQLCipher 4 CBC/SHA512 页面布局。客户端版本、权限和加载状态会影响效果。未知布局不会通过猜密钥或绕过权限处理。
+
+**合成端到端测试不等于真实微信版本验收，微信 4.1.15.13 的真实取密钥和全量导出仍未现场验证。** 不要求用户自行找 DLL，但也不能承诺装完后所有版本都成功。
 
 ```powershell
-python -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-## 隐私与安全
+测试仅使用合成内存和数据库，覆盖无 DLL 的捕获 → DPAPI → 多库解密 → 聊天读取，以及多账户冲突、错误密钥、WAL、截断压缩和防覆盖。未导出图片/视频文件、未转写语音，JSONL 不承诺全局时间排序。
 
-只允许本人或明确授权的数据。原始数据库只读，不关闭安全防护、不自动退出微信、不提权、不绕过登录。Hook 是独立的有副作用操作，默认检查/读取不会调用它。
+## 来源与许可
 
-工具不包含上传或遥测功能；诊断摘要不打印正文/密钥。检查清单可能含账户路径，导出文件和 base64 仍含私人信息，必须存放于限制访问的目录。Python 内存擦除仅为尽力而为；将聊天交给云端模型分析不属于“纯本地处理”。
+运行时布局/扫描逻辑参考并改编自 MIT 许可的 [TANGandXUE/wcdb-key-tool](https://github.com/TANGandXUE/wcdb-key-tool)，固定审阅版本及完整许可见 [third_party/NOTICE.md](third_party/NOTICE.md) 和 [MIT 许可](third_party/wcdb-key-tool.LICENSE)。未捆绑或运行上游的调试器路径、明文密钥缓存和第三方 DLL。Windows API 依据：[ReadProcessMemory](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-readprocessmemory)、[VirtualQueryEx](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualqueryex)。
 
-`.gitignore` 排除数据库、聊天导出、密钥、DLL、日志和工作副本，但不替代提交前审查。不要把这些文件附到 Issue 中。
-
-## 仓库结构
-
-```text
-SKILL.md
-agents/openai.yaml
-references/windows-export.md
-scripts/                 # 可执行实现
-tests/test_reader.py     # 仅合成夹具
-requirements.txt
-```
-
-工作流规则见 [SKILL.md](SKILL.md)。本仓库未指定开源许可证前，不应推定已获得任意再分发授权；第三方工具遵循其各自许可。
+本仓库自身未指定统一许可证前，不应推定获得任意再分发授权；上述第三方部分保留其原许可。

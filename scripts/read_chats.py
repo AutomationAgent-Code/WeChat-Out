@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import io
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -71,7 +72,9 @@ def contacts_from(path):
 def export(contact_db, message_dir, output, self_id=None, conversation=None):
     contact_db = Path(contact_db).resolve(strict=True)
     message_dir = Path(message_dir).resolve(strict=True)
-    shards = [message_dir] if message_dir.is_file() else sorted(message_dir.rglob('message_*.db'))
+    shards = [message_dir] if message_dir.is_file() else sorted(
+        p for p in message_dir.rglob('*')
+        if p.is_file() and re.fullmatch(r'message_\d+\.db', p.name, re.IGNORECASE))
     if not shards:
         raise ValueError('NO_MESSAGE_SHARDS')
     if Path(output).resolve() in [contact_db, *shards]:

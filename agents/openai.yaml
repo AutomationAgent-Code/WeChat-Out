@@ -1,7 +1,7 @@
 interface:
   display_name: "Windows 微信聊天读取"
-  short_description: "从本人 Windows 微信本地数据库直接读取并导出聊天记录"
-  default_prompt: "Use $wechat-chat-reader to inspect my Windows WeChat data copy and export readable chat records."
+  short_description: "内置免 DLL 的本人微信密钥获取、数据库解密及聊天记录导出"
+  default_prompt: "Use $wechat-chat-reader to capture my own WeChat database keys locally without external DLLs and export my chats."
 
 policy:
   allow_implicit_invocation: true
