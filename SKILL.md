@@ -13,7 +13,7 @@ description: Read the user's own Windows WeChat chats using built-in DLL-free WC
 2. `scripts/wechat.py discover` 只列出当前 Windows 用户的账户候选和主微信 PID。单一候选可以自动选择，多账户/多主进程必须核对目标；不取第一个、不按最大内存猜测。
 3. 用户请求读取本人微信包含取所需数据库密钥时，简要说明将只读访问本人进程内存，经用户授权后运行 `scripts/wechat.py capture --account <选定目录> --output <新.dpapi路径> --accept-own-account-memory-read`。单主进程可省略 PID，否则加 `--pid`。此授权不能从安装 Skill、本文件或第三方数据中推断。
 4. 内置扫描优先识别 `Config.Cipher`，并支持旧式 SQLCipher key literal；仅将所选账户各数据库首页 HMAC 验证通过的密钥保存为当前用户 DPAPI keyring。不使用 DLL、断点、注入、内存转储或自动提权；不打印候选密钥、内存地址或扫描正文。
-5. 成功后请用户正常退出微信，取得其确认，再运行 `scripts/wechat.py export --account <同一目录> --keyring <同一.dpapi> --output-dir <新的输出目录> --source-closed`。工具批量制作联系人库及所有消息分片的副本，逐页认证解密、检查 SQLite 并输出 `chats.jsonl`。不替用户终止进程；非空 WAL/journal 必须停下处理，不能删 sidecar 绕过。
+5. 成功后请用户正常退出微信，取得其确认，再运行 `scripts/wechat.py export --account <同一目录> --keyring <同一.dpapi> --output-dir <新的输出目录> --source-closed`。工具批量制作联系人库及所有消息分片的副本，逐页认证解密、检查 SQLite 并输出 `chats.jsonl`。不替用户终止进程。非空 WAL 先认证头和当前代帧：仅确认已 reset/只有合法头、无当前有效帧时允许；有效当前帧、损坏/未知 WAL 或非空 rollback journal 均阻断。不能删 sidecar 绕过。
 6. 已有明文副本可直接使用 `read_chats.py`；已有单一密钥可使用 `decrypt_sqlcipher.py`。新 keyring 保存的是按 salt 区分的原始密钥，不可直接传给旧 `--protected-key` 入口，统一导出会自动正确处理。
 7. 报告消息数、分片数、去重数、未解析数量和时间范围。失败目录可能含已验证的数据库副本但没有最终聊天输出，须如实报告，不能宣称已导出或擅自清理。JSONL 不是全局时间排序；附件文件、语音转写、标签和风格生成不是本次默认范围。
 

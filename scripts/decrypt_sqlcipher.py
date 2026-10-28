@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from common import output_file, readonly, run, validate
+from wal_state import file_hash, sidecar_guard
 
 
 def wipe(value):
@@ -60,11 +61,9 @@ def decrypt(source, output, key, page_size=4096, iterations=256000, raw_key=Fals
     source, output = Path(source).resolve(strict=True), Path(output).resolve()
     if source == output:
         raise ValueError('SOURCE_OUTPUT_CONFLICT')
-    # Page-only decryption cannot replay encrypted WAL or hot rollback journals.
-    for suffix in ('-wal', '-journal'):
-        sidecar = Path(str(source) + suffix)
-        if sidecar.exists() and sidecar.stat().st_size:
-            raise ValueError('UNMERGED_JOURNAL: close WeChat cleanly or use a SQLCipher-aware backup')
+    # A reset WAL can retain stale/preallocated bytes; current frames still block.
+    guard = sidecar_guard(source, page_size)
+    source_hash = file_hash(source)
     if len(key) != 32:
         raise ValueError('KEY_LENGTH_INVALID')
     if page_size not in (1024, 2048, 4096, 8192, 16384, 32768, 65536) or iterations < 1:
@@ -96,6 +95,8 @@ def decrypt(source, output, key, page_size=4096, iterations=256000, raw_key=Fals
                         raise ValueError('SOURCE_CHANGED')
                 with readonly(temp) as db:
                     validate(db)
+                if guard != sidecar_guard(source, page_size) or source_hash != file_hash(source):
+                    raise ValueError('SOURCE_CHANGED')
         finally:
             wipe(aes)
             wipe(mac)

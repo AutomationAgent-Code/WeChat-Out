@@ -7,6 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 from common import output_file, readonly, run, validate
+from wal_state import sidecar_guard
 
 
 def digest(path):
@@ -35,16 +36,10 @@ def snapshot(source, output, source_closed=False, timeout_seconds=30):
         else:
             if not source_closed:
                 raise ValueError('SOURCE_MUST_BE_CLOSED: copying live encrypted files is not a consistent backup')
-            def check_sidecars():
-                for suffix in ('-wal', '-journal'):
-                    p = Path(str(source)+suffix)
-                    if p.exists() and p.stat().st_size:
-                        raise ValueError('UNMERGED_JOURNAL: use a SQLCipher-aware backup')
-            check_sidecars()
+            guard = sidecar_guard(source)
             before = digest(source)
             shutil.copyfile(source, temp)
-            check_sidecars()
-            if before != digest(source) or before != digest(temp):
+            if guard != sidecar_guard(source) or before != digest(source) or before != digest(temp):
                 raise ValueError('SOURCE_CHANGED')
     return {'kind': 'sqlite_backup' if plain else 'closed_encrypted_copy', 'bytes': output.stat().st_size}
 

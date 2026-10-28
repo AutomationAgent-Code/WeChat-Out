@@ -12,6 +12,7 @@ from decrypt_sqlcipher import decrypt, unprotect, wipe
 from memory_keys import Budget, WindowsMemory, own_weixin_processes, scan_memory, verify_raw_key
 from read_chats import export
 from snapshot_database import snapshot
+from wal_state import sidecar_guard
 
 
 def account_root(path):
@@ -183,10 +184,7 @@ def export_account(root, output_dir, keyring=None, source_closed=False, self_id=
     try:
         # Preflight every file before creating an output directory.
         for path in paths:
-            for suffix in ('-wal', '-journal'):
-                sidecar = Path(str(path)+suffix)
-                if sidecar.exists() and sidecar.stat().st_size:
-                    raise ValueError('UNMERGED_JOURNAL')
+            sidecar_guard(path)
             with path.open('rb') as stream:
                 page = stream.read(4096)
             if page[:16] != b'SQLite format 3\0':
